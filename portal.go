@@ -1290,6 +1290,13 @@ func (portal *Portal) SetReply(content *event.MessageEventContent, info whatsapp
 	return
 }
 
+func SendReaction(intent *appservice.IntentAPI, roomID id.RoomID, eventID id.EventID, reaction string) (*mautrix.RespSendEvent, error) {
+	if err := intent.EnsureJoined(roomID); err != nil {
+		return nil, err
+	}
+	return intent.Client.SendReaction(roomID, eventID, reaction)
+}
+
 func (portal *Portal) HandleMessageRevoke(user *User, message whatsapp.MessageRevocation) bool {
 	msg := portal.bridge.DB.Message.GetByJID(portal.Key, message.Id)
 	if msg == nil || msg.IsFakeMXID() {
@@ -1308,11 +1315,9 @@ func (portal *Portal) HandleMessageRevoke(user *User, message whatsapp.MessageRe
 	if intent == nil {
 		intent = portal.MainIntent()
 	}
-	_, err := intent.RedactEvent(portal.MXID, msg.MXID)
+	_, err := SendReaction(intent, portal.MXID, msg.MXID, "DELETED")
 	if err != nil {
 		portal.log.Errorln("Failed to redact %s: %v", msg.JID, err)
-	} else {
-		msg.Delete()
 	}
 	return true
 }
@@ -2233,9 +2238,8 @@ func (portal *Portal) sendDeliveryReceipt(eventID id.EventID) {
 }
 
 func (portal *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
-	if !portal.HasRelaybot() && (
-		(portal.IsPrivateChat() && sender.JID != portal.Key.Receiver) ||
-			portal.sendMatrixConnectionError(sender, evt.ID)) {
+	if !portal.HasRelaybot() && ((portal.IsPrivateChat() && sender.JID != portal.Key.Receiver) ||
+		portal.sendMatrixConnectionError(sender, evt.ID)) {
 		return
 	}
 	portal.log.Debugfln("Received event %s", evt.ID)
